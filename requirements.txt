@@ -1,7 +1,14 @@
+# fastapi
+# uvicorn
+# requests
+# numpy
+# scikit-learn
+# xgboost
+# joblib
+
 fastapi
 uvicorn
 requests
 numpy
-scikit-learn
 xgboost
-joblib
+scikit-learn
