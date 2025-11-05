@@ -1,4 +1,3 @@
-~~~{"variant":"standard","title":"FastAPI EMA+AI XGBoost Bot with Hourly Summary","id":"54322"}
 import os
 import json
 import requests
