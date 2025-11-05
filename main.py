@@ -175,4 +175,3 @@ async def startup_event():
             asyncio.create_task(monitor_ema(symbol, tf))
     # Hourly close alerts
     asyncio.create_task(monitor_hourly())
-~~~
