@@ -609,7 +609,9 @@ import numpy as np
 from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Request
 import xgboost as xgb
+from sklearn.preprocessing import StandardScaler
 
+# ---------------- Config ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SYMBOLS = ["OPUSDT", "RENDERUSDT", "BTCUSDT"]
 TIMEFRAMES = ["5m", "15m"]
@@ -638,12 +640,11 @@ def broadcast(msg):
 
 # ---------------- Indicators ----------------
 def get_ema(values, period):
-    if len(values) < period:
+    if len(values) < period or period < 1:
         return None
     weights = np.exp(np.linspace(-1., 0., period))
     weights /= weights.sum()
-    ema = np.convolve(values, weights, mode="full")[:len(values)]
-    ema[:period] = ema[period]
+    ema = np.convolve(values, weights, mode="valid")
     return float(np.round(ema[-1], 8))
 
 def get_rsi(closes, period=14):
@@ -651,7 +652,7 @@ def get_rsi(closes, period=14):
         return None
     deltas = np.diff(closes)
     ups = deltas.clip(min=0)
-    downs = -1*deltas.clip(max=0)
+    downs = -deltas.clip(max=0)
     roll_up = np.mean(ups[-period:])
     roll_down = np.mean(downs[-period:])
     if roll_down == 0: return 100
@@ -663,8 +664,21 @@ def get_macd(closes, fast=12, slow=26, signal=9):
         return None, None, None
     ema_fast = get_ema(closes, fast)
     ema_slow = get_ema(closes, slow)
+    if ema_fast is None or ema_slow is None:
+        return None, None, None
     macd_line = ema_fast - ema_slow
-    signal_line = get_ema([get_ema(closes[:i], fast) - get_ema(closes[:i], slow) for i in range(slow, len(closes))], signal)
+    # signal line
+    macd_series = []
+    for i in range(slow, len(closes)):
+        fast_i = get_ema(closes[:i+1], fast)
+        slow_i = get_ema(closes[:i+1], slow)
+        if fast_i is None or slow_i is None:
+            continue
+        macd_series.append(fast_i - slow_i)
+    if len(macd_series) < signal:
+        signal_line = None
+    else:
+        signal_line = get_ema(macd_series, signal)
     macd_hist = macd_line - signal_line if signal_line is not None else 0
     return round(macd_line,5), round(signal_line,5) if signal_line else None, round(macd_hist,5)
 
@@ -721,8 +735,7 @@ def train_ml_model(symbol, closes, volumes=None):
     X, y = [], []
     for i in range(30, len(closes)-1):
         feats = compute_features(closes[:i], volumes[:i] if volumes else None)
-        if None in feats: 
-            continue
+        if None in feats: continue
         X.append(feats)
         y.append(1 if closes[i+1] > closes[i] else 0)
     if len(X) < 20: return None
@@ -758,16 +771,18 @@ async def monitor_ema(symbol, interval):
         volumes.append(float(klines_new[-1][5]))
         ema9 = get_ema(closes, 9)
         ema26 = get_ema(closes, 26)
-        if prev_ema9 and prev_ema26 and ema9 and ema26:
-            prob = predict_trend(model, closes, volumes)
-            if prev_ema9 < prev_ema26 and ema9 >= ema26:
-                msg = f"🚀 {symbol} ({interval}) EMA9 just crossed ABOVE EMA26 — BUY NOW 💰\nPrice: {close_price}"
-                if prob: msg += f"\n🤖 Uptrend Probability: {round(prob*100,2)}%"
-                broadcast(msg)
-            elif prev_ema9 > prev_ema26 and ema9 <= ema26:
-                msg = f"⚡ {symbol} ({interval}) EMA9 just crossed BELOW EMA26 — SELL NOW ⚠️\nPrice: {close_price}"
-                if prob: msg += f"\n🤖 Downtrend Probability: {round((1-prob)*100,2)}%"
-                broadcast(msg)
+        if None in [prev_ema9, prev_ema26, ema9, ema26]: 
+            prev_ema9, prev_ema26 = ema9, ema26
+            continue
+        prob = predict_trend(model, closes, volumes)
+        if prev_ema9 < prev_ema26 and ema9 >= ema26:
+            msg = f"📈 {symbol} ({interval}) EMA9 crossed ABOVE EMA26 — BUY 💰\nPrice: {close_price}"
+            if prob: msg += f"\n🤖 Uptrend Probability: {round(prob*100,2)}%"
+            broadcast(msg)
+        elif prev_ema9 > prev_ema26 and ema9 <= ema26:
+            msg = f"📉 {symbol} ({interval}) EMA9 crossed BELOW EMA26 — SELL ⚠️\nPrice: {close_price}"
+            if prob: msg += f"\n🤖 Downtrend Probability: {round((1-prob)*100,2)}%"
+            broadcast(msg)
         prev_ema9, prev_ema26 = ema9, ema26
 
 # ---------------- Hourly Close Alerts ----------------
