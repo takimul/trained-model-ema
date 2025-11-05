@@ -774,15 +774,28 @@ async def monitor_ema(symbol, interval):
         if None in [prev_ema9, prev_ema26, ema9, ema26]: 
             prev_ema9, prev_ema26 = ema9, ema26
             continue
-        prob = predict_trend(model, closes, volumes)
+        # prob = predict_trend(model, closes, volumes)
+        # if prev_ema9 < prev_ema26 and ema9 >= ema26:
+        #     msg = f"📈 {symbol} ({interval}) EMA9 crossed ABOVE EMA26 — BUY 💰\nPrice: {close_price}"
+        #     if prob: msg += f"\n🤖 Uptrend Probability: {round(prob*100,2)}%"
+        #     broadcast(msg)
+        # elif prev_ema9 > prev_ema26 and ema9 <= ema26:
+        #     msg = f"📉 {symbol} ({interval}) EMA9 crossed BELOW EMA26 — SELL ⚠️\nPrice: {close_price}"
+        #     if prob: msg += f"\n🤖 Downtrend Probability: {round((1-prob)*100,2)}%"
+        #     broadcast(msg)
+        # for less msg
+                prob = predict_trend(model, closes, volumes)
         if prev_ema9 < prev_ema26 and ema9 >= ema26:
-            msg = f"📈 {symbol} ({interval}) EMA9 crossed ABOVE EMA26 — BUY 💰\nPrice: {close_price}"
-            if prob: msg += f"\n🤖 Uptrend Probability: {round(prob*100,2)}%"
-            broadcast(msg)
+            if prob and prob * 100 >= 60:
+                msg = f"📈 {symbol} ({interval}) EMA9 crossed ABOVE EMA26 — BUY 💰\nPrice: {close_price}"
+                msg += f"\n🤖 Uptrend Probability: {round(prob*100,2)}%"
+                broadcast(msg)
         elif prev_ema9 > prev_ema26 and ema9 <= ema26:
-            msg = f"📉 {symbol} ({interval}) EMA9 crossed BELOW EMA26 — SELL ⚠️\nPrice: {close_price}"
-            if prob: msg += f"\n🤖 Downtrend Probability: {round((1-prob)*100,2)}%"
-            broadcast(msg)
+            if prob and (1 - prob) * 100 >= 60:
+                msg = f"📉 {symbol} ({interval}) EMA9 crossed BELOW EMA26 — SELL ⚠️\nPrice: {close_price}"
+                msg += f"\n🤖 Downtrend Probability: {round((1-prob)*100,2)}%"
+                broadcast(msg)
+
         prev_ema9, prev_ema26 = ema9, ema26
 
 # ---------------- Hourly Close Alerts ----------------
